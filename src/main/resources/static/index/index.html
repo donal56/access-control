@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Página principal</title>
+		<link rel="shortcut icon" href="/img/favicon.ico" type="image/x-icon">
+		<link rel="icon" href="/img/favicon.ico" type="image/x-icon">
+        <script src="/js/sockjs.min.js"></script>
+        <script src="/js/stomp.min.js"></script>
+        <script>
+            const socket = new SockJS('/ws');
+	        const stompClient = Stomp.over(socket);
+	        stompClient.debug = null;
+	        
+            stompClient.connect({}, function(frame) {
+                stompClient.subscribe('/topic/face-recognition', function(data) {
+                	
+                	let event = JSON.parse(data.body);
+                    console.log(event);
+                    
+                    const rootContainer = document.getElementById("eventsList");
+                	const eventContainer = document.createElement("DIV");
+                	eventContainer.innerHTML = 
+                		"********" + (rootContainer.children.length + 1) + "********<br>" +
+                		"Evento: " + event.eventType + " (" + event.accessControllerEvent.majorEventType + "/" + 
+                				event.accessControllerEvent.subEventType + ")<br>" +
+                		"Verificado: " + event.accessControllerEvent.currentVerifyMode + "<br>" + 
+                		"Persona: " + (event.customData?.newUser || event.accessControllerEvent.name) + "<br>" + 
+                		"Fecha: " + event.dateTime + "<br><br>";
+                		
+               		rootContainer.appendChild(eventContainer);
+                });
+            });
+	        
+	        //stompClient.send("/topic/face-recognition", {}, JSON.stringify(json));
+	        
+	    </script>
+        </script>
+	</head>
+	<body>
+		<h2>Lista de eventos</h1>
+		<div id= "eventsList">
+		</div>
+	</body>
+</html>
