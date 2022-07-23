@@ -18,6 +18,10 @@ public class AccessControllerEvent {
 	private Integer statusValue;
 	private String mask;
 	private Boolean purePwdVerifyEnable;
+	private Integer verifyNo;
+	private String employeeNoString;
+	private String userType;
+	private Integer picturesNumber;
 	
 	public String getDeviceName() {
 		return deviceName;
@@ -145,6 +149,38 @@ public class AccessControllerEvent {
 
 	public void setPurePwdVerifyEnable(Boolean purePwdVerifyEnable) {
 		this.purePwdVerifyEnable = purePwdVerifyEnable;
+	}
+
+	public Integer getVerifyNo() {
+		return verifyNo;
+	}
+
+	public void setVerifyNo(Integer verifyNo) {
+		this.verifyNo = verifyNo;
+	}
+
+	public String getEmployeeNoString() {
+		return employeeNoString;
+	}
+
+	public void setEmployeeNoString(String employeeNoString) {
+		this.employeeNoString = employeeNoString;
+	}
+
+	public String getUserType() {
+		return userType;
+	}
+
+	public void setUserType(String userType) {
+		this.userType = userType;
+	}
+
+	public Integer getPicturesNumber() {
+		return picturesNumber;
+	}
+
+	public void setPicturesNumber(Integer picturesNumber) {
+		this.picturesNumber = picturesNumber;
 	}
 
 	@Override

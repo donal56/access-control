@@ -1,5 +1,7 @@
 package com.insigniait.accessControl.config;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -8,6 +10,8 @@ import java.util.function.Consumer;
 
 import javax.annotation.PostConstruct;
 
+import org.apache.commons.codec.binary.Base64;
+import org.apache.commons.io.FileUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskExecutor;
@@ -30,12 +34,16 @@ public class ThreadManager {
     @PostConstruct
     public void inicializarTerminalReconocimientoFacial() {
     	
-    	FaceRecognitionTerminal terminal = new FaceRecognitionTerminal("192.168.1.68", "admin", "Insigniait01!", "http", 80);
-
+    	String snapshotsPath = System.getProperty("user.dir") + "\\src\\main\\resources\\static\\img\\visitors";
+    	
+    	FaceRecognitionTerminal terminal = new FaceRecognitionTerminal("192.168.100.48", "admin", "Insigniait01!");
+    	terminal.setSnapshotsPath(snapshotsPath);
+    	
     	Runnable faceRecognitionEventsThread = new Thread(new Runnable() {
 
 			@Override
 			public void run() {
+				
 				terminal.fetchEvents(new Consumer<DeviceEvent>() {
 					
 					@Override
@@ -55,6 +63,16 @@ public class ThreadManager {
 								String newUser = terminal.registerUnknowVistor();
 								Map<String, String> customData = new HashMap<String, String>();
 								customData.put("newUser", newUser);
+								
+								File snapshot = terminal.retrieveSnapshot(null, newUser);
+								try {
+									byte[] snapshotBytes = Base64.encodeBase64(FileUtils.readFileToByteArray(snapshot));
+									customData.put("snapshot", new String(snapshotBytes));
+								} 
+								catch (IOException e) {
+									e.printStackTrace();
+								}
+								
 								event.setCustomData(customData);
 							}
 

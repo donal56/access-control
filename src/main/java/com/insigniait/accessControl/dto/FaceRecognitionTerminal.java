@@ -10,10 +10,14 @@ import com.insigniait.accessControl.dto.UserInfo.Valid;
 
 public class FaceRecognitionTerminal extends ISAPIDevice {
 
-	public FaceRecognitionTerminal(String hostName, String user, String pass, String httpProtocol, int httpPort) {
-		super(hostName, user, pass, httpProtocol, httpPort);
+	public FaceRecognitionTerminal(String hostName, String user, String pass) {
+		super(hostName, user, pass);
 	}
 
+	/**
+	 * Registra un usuario nuevo del tipo visitante
+	 * @return
+	 */
 	public String registerUnknowVistor() {
 		
 		String identifier = UUID
@@ -51,6 +55,6 @@ public class FaceRecognitionTerminal extends ISAPIDevice {
 		rightPlan.setPlanTemplateNo("1");
 		userInfo.setRightPlan(Arrays.asList(rightPlan));
 		
-		return adduser(userInfo) ? userInfo.getEmployeeNo() : null;
+		return addUser(userInfo) ? userInfo.getEmployeeNo() : null;
 	}
 }

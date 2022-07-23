@@ -14,15 +14,31 @@
             stompClient.connect({}, function(frame) {
                 stompClient.subscribe('/topic/face-recognition', function(data) {
                 	
-                	let event = JSON.parse(data.body);
-                    console.log(event);
+                	const event = JSON.parse(data.body);
+                	const esVisitante = event.accessControllerEvent.subEventType == 76;
+                    console.debug(event);
                     
                     const rootContainer = document.getElementById("eventsList");
                 	const eventContainer = document.createElement("DIV");
                 	eventContainer.innerHTML = 
                 		"********" + (rootContainer.children.length + 1) + "********<br>" +
-                		"Persona: " + (event.customData?.newUser ? "Invitado " + event.customData.newUser :  event.accessControllerEvent.name) + "<br>" + 
-                		"Fecha: " + event.dateTime + "<br><br>";
+                		"Persona: " + (esVisitante ? "Invitado " + event.customData.newUser :  event.accessControllerEvent.name) + "<br>" + 
+                		"Fecha: " + event.dateTime + 
+                		(event.customData?.snapshot ? "Imagen: <br><img src='data:image/jpg;base64," + event.customData.snapshot + "' style= 'width: 300px'></img>'" : "");
+                		"<br><br>";
+                		
+                	if(esVisitante || false) {
+                		const divGuiaVisitante = document.getElementById("visitorsGuide");
+                		const esperePorFavor = function(arr) {
+                			if(arr.length >= 1) {
+	                			setTimeout(() => {
+	                				divGuiaVisitante.textContent = arr.shift();
+	                				esperePorFavor(arr);
+	                			}, 1000);
+                			}
+                		};
+                		esperePorFavor(["Espere un momento...", "5...", "4...", "3...", "2...", "1...", ""]);
+                	}
                 		
                		rootContainer.appendChild(eventContainer);
                 });
@@ -34,8 +50,14 @@
         </script>
 	</head>
 	<body>
-		<h2>Lista de eventos</h1>
-		<div id= "eventsList">
-		</div>
+	    <div style= "float: left; width: 50%">
+			<h2>Lista de eventos</h1>
+			<div id= "eventsList">
+			</div>
+	    </div>
+	    <div style= "float: right; width: 50%">
+			<div id= "visitorsGuide" style= "font-size: 26px; text-align: center">
+			</div>
+	    </div>
 	</body>
 </html>
