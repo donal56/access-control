@@ -33,7 +33,7 @@ public class ThreadManager {
     	
     	String snapshotsPath = System.getProperty("user.dir") + "\\src\\main\\resources\\static\\img\\visitors";
     	
-    	AccessControlDevice terminal = new AccessControlDevice("192.168.1.194", "admin", "Insigniait01!");
+    	AccessControlDevice terminal = new AccessControlDevice("192.168.100.48", "admin", "Insigniait01!");
     	terminal.setSnapshotsPath(snapshotsPath);
     	
     	Runnable faceRecognitionEventsThread = new Thread(new Runnable() {
@@ -41,7 +41,9 @@ public class ThreadManager {
 			@Override
 			public void run() {
 				
-				terminal.captureFaceData();
+				String newUser = terminal.registerUnknowVistor();
+				File snapshot = terminal.retrieveSnapshot(101, newUser);
+				terminal.agregarRostro("1", newUser, "Invitado", snapshot);
 				
 				/*terminal.fetchEvents(new Consumer<GenericEvent>() {
 					
@@ -63,7 +65,6 @@ public class ThreadManager {
 								Map<String, Object> customData = new HashMap<String, Object>();
 								customData.put("newUser", newUser);
 
-								//terminal.captureFaceData();
 								File snapshot = terminal.retrieveSnapshot(101, newUser);
 								
 								terminal.agregarRostro("1", newUser, "Invitado", snapshot);

@@ -42,6 +42,7 @@ import org.springframework.web.client.RestTemplate;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.insigniait.accessControl.config.MultiPartMessageConverter;
 import com.insigniait.accessControl.util.StringUtils;
 
 public class ISAPIDevice extends HikSenseDevice {
@@ -53,8 +54,8 @@ public class ISAPIDevice extends HikSenseDevice {
 	
 	public ISAPIDevice(String hostName, String user, String pass) {
 		super(hostName, user, pass);
-		this.isapi = createConnection();
 		this.mapper = createObjectMapper();
+		this.isapi = createConnection();
 	}
 	
 	/**
@@ -161,6 +162,7 @@ public class ISAPIDevice extends HikSenseDevice {
 			}
 			catch(Exception e) {
 				String fullMessage = StringUtils.deleteAny(e.getMessage(), "\n\r");
+				fullMessage = fullMessage == null ? "" : fullMessage;
 				
 				if(e instanceof ResourceAccessException) {
 					System.err.println("REINICIANDO CONEXIÓN... [Stream ended unexpectedly]");
@@ -342,6 +344,8 @@ public class ISAPIDevice extends HikSenseDevice {
 	    		.setConnectTimeout(Duration.ofSeconds(20))
 	    		.setReadTimeout(Duration.ofMinutes(1))
 	    		.build();
+	    
+	    restTemplate.getMessageConverters().add(new MultiPartMessageConverter(mapper));
 	    
 	    return restTemplate;
 	}

@@ -1,18 +1,19 @@
 package com.insigniait.accessControl.dto;
 
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.charset.Charset;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.apache.commons.fileupload.disk.DiskFileItem;
-import org.apache.commons.io.FileUtils;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -20,10 +21,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.web.client.RequestCallback;
+import org.springframework.web.client.ResponseExtractor;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.multipart.commons.CommonsMultipartFile;
 
-import com.insigniait.accessControl.config.MultiPartMessageConverter;
 import com.insigniait.accessControl.dto.UserInfo.RightPlan;
 import com.insigniait.accessControl.dto.UserInfo.Valid;
 
@@ -127,39 +129,40 @@ public class AccessControlDevice extends ISAPIDevice {
 		headers.setAccept(Arrays.asList(MediaType.ALL));
 		headers.setConnection("");
 		HttpEntity<String> entity = new HttpEntity<String>(payload, headers);
-
-		isapi.getMessageConverters().add(new MultiPartMessageConverter(mapper));
-        ResponseEntity<String> response = isapi.postForEntity(service, entity, String.class);
-        
-        if(response.getStatusCode() == HttpStatus.OK) {
-        	String magicBytes = "ÿØÿ";
-            String responseText = response.getBody();
-            
-    		String contentType = response.getHeaders().getFirst("Content-Type");
-    		String boundary = contentType.replace("multipart/form-data;boundary=", "").trim();
-         
-    		String regex = "--" + boundary + ".*Content-Type:image/jpeg.*(" + magicBytes + ".*)--" + boundary + "--";
-    		        
-    		Pattern pattern = Pattern.compile(regex, Pattern.MULTILINE | Pattern.DOTALL);
-    		Matcher matcher = pattern.matcher(responseText);
-    		       
-    		if(matcher.find() && matcher.groupCount() == 1) {
-    			String binaryContent = matcher.group(1);
-    			String imagePath = getSnapshotsPath() + "\\" + Long.toString(System.currentTimeMillis()) + ".jpg";
-    			
-    			try {
-    				File file = new File(imagePath);
-    				file.createNewFile();
-    				FileUtils.writeStringToFile(file, binaryContent);
-    				return file;
-    			}
-    			catch(IOException ioe) {
-    				ioe.printStackTrace();
-    			}
-    		}
-        }
-        
-        return null;
+		
+		ResponseExtractor<File> responseExtractor = response -> {
+			 if(response.getStatusCode() == HttpStatus.OK) {
+				 
+				 String fileName = Long.toString(System.currentTimeMillis());
+				 String imagePath = getSnapshotsPath() + "\\" + fileName + ".jpg";
+				 String tempPath = System.getProperty("java.io.tmpdir") + "\\" + fileName + ".txt";
+				 
+				 Files.copy(response.getBody(), Paths.get(tempPath));
+				 
+				 // Despues de guardarlo, por que si tratas el inputStream como una cadena jodes el encodeo del binario de la foto
+				 // https://superuser.com/q/782692
+				 File file = new File(imagePath);
+				 file.createNewFile();
+				 FileWriter fileWriter = new FileWriter(file);
+				 Files.newBufferedReader(Paths.get(tempPath), Charset.forName("Cp1252"))
+				 	.lines()
+				 	.skip(6)
+				 	.forEach(line -> {
+						try {
+							fileWriter.write(line);
+						} 
+						catch (IOException e) {
+							e.printStackTrace();
+						}
+				 });
+				 fileWriter.close();
+				 
+				 return file;
+			 }
+			 return null;
+		};
+		RequestCallback requestCallback = isapi.httpEntityCallback(entity, String.class);
+		return isapi.execute(service, HttpMethod.POST, requestCallback, responseExtractor);
 	}
 	
 	public AddFaceRecordResult agregarRostro(String facePictureDataLibraryID, String employeeID, String fullName, File photo) {
@@ -181,8 +184,8 @@ public class AccessControlDevice extends ISAPIDevice {
 		faceRecord.put("certificateNumber", null);
 		
 		String contentType = "image/jpg";
-		MultipartFile multipartFile = new CommonsMultipartFile(
-				new DiskFileItem("FaceImage", contentType, false, photo.getName(), (int) photo.length(), photo));
+		DiskFileItem diskFileItem = new DiskFileItem("FaceImage", contentType, false, photo.getName(), (int) photo.length(), photo.getParentFile());
+		MultipartFile multipartFile = new CommonsMultipartFile(diskFileItem);
 
 		LinkedMultiValueMap<String, String> faceImage = new LinkedMultiValueMap<>();
 	    faceImage.add("Content-disposition", "form-data; name=FaceImage; filename=" + multipartFile.getOriginalFilename());
