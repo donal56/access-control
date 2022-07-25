@@ -3,27 +3,31 @@ package com.insigniait.accessControl.dto;
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.text.SimpleDateFormat;
+import java.time.Duration;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.function.BiConsumer;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.apache.commons.io.IOUtils;
+import org.apache.http.NoHttpResponseException;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
 import org.apache.http.client.CredentialsProvider;
 import org.apache.http.client.HttpClient;
+import org.apache.http.client.HttpRequestRetryHandler;
 import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.client.HttpClients;
+import org.apache.http.protocol.HttpContext;
 import org.apache.tomcat.util.http.fileupload.MultipartStream;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.core.io.ClassPathResource;
@@ -35,6 +39,7 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.ResponseExtractor;
 import org.springframework.web.client.RestTemplate;
 
+import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.insigniait.accessControl.util.StringUtils;
@@ -53,46 +58,11 @@ public class ISAPIDevice extends HikSenseDevice {
 	}
 	
 	/**
-	 * Agrega un nuevo usuario a la terminal
-	 * @param userInfo
-	 * @return
-	 */
-	public Boolean addUser(UserInfo userInfo) {
-		String service = getIsapiUrl() + "/AccessControl/UserInfo/Record?format=json";
-		
-		Map<String, Object> body = new HashMap<String, Object>();
-		body.put("UserInfo", userInfo);
-		
-		ResponseEntity<GenericResponse> response = isapi.postForEntity(service, body, GenericResponse.class);
-		return response.getStatusCode() == HttpStatus.OK && response.getBody().isSuccessful();
-	}
-	
-	/**
-	 * Liga la foto de un rostro al registro de un usuario en la terminal
-	 * @param employeeId - ID de empleado
-	 * @param facePhoto - Foto del rostro
-	 */
-	public void registerUserFace(String employeeId, File facePhoto) {
-		String service = getIsapiUrl() + "/Intelligent/FDLib/FDSetUp?format=json";
-		
-		Map<String, Object> faceDataRecord = new HashMap<String, Object>();
-		faceDataRecord.put("faceLibType", "blackFD");
-		faceDataRecord.put("FDID", employeeId);
-		faceDataRecord.put("FPID", employeeId);
-		
-		Map<String, Object> request = new HashMap<String, Object>();
-		request.put("FaceDataRecord", faceDataRecord);
-		request.put("img", facePhoto);
-		
-		isapi.put(service, request);
-	}
-	
-	/**
 	 * Escucha de manera indefinida los eventos de una terminal
 	 * Llamar a endEventFetching() para finalizar
 	 * @param callback - Metodo a llamar al encontrar un evento
 	 */
-	public void fetchEvents(Consumer<DeviceEvent> callback) {
+	public void fetchEvents(Consumer<GenericEvent> callback) {
 		
 		String service = getIsapiUrl() + "/Event/notification/alertStream";
 		
@@ -103,86 +73,81 @@ public class ISAPIDevice extends HikSenseDevice {
 		Consumer<String> readEventJson = new Consumer<String>() {
 			@Override
 			public void accept(String json) {
-				DeviceEvent event = null;
+				GenericEvent event = null;
 				try {
 					event = mapper
 							.createParser(json)
-							.readValueAs(DeviceEvent.class);
+							.readValueAs(GenericEvent.class);
+					
+			        if(callback != null) {
+			        	callback.accept(event);
+			        }
 				} 
 				catch (IOException e) {
 					System.err.println("No se pudo parsear: [" + json.substring(0, 120) + "...]");
 				}
-		        
-		        if(callback != null && event != null) {
-		        	callback.accept(event);
-		        }
 			}
 		};
 		
 		ResponseExtractor<File> responseExtractor = rawResponse -> {
 			
-			// Si el tipo de contenido no es el requerido entonces no se tiene activada la subida de imagenes
-			String contentType = rawResponse.getHeaders().getFirst("Content-Type");
-			if(!contentType.startsWith("multipart/mixed")) {
-				System.err.print("[ERROR] Active la subida de imagenes en autenticación para el correcto funcionamiento de la función");
-				endEventFetching();
-				return null;
-			}
 
 			// Detectar delimitador
+			String contentType = rawResponse.getHeaders().getFirst("Content-Type");
 			String boundary = contentType.replace("multipart/mixed; boundary=", "").trim();
 			
 			// Convertir InputStream en un MultipartStream
 			// El tamaño de buffer debe estar entre el rango del tamaño promedio de las fotos y el tamaño minimo de una partición de datos del stream
-			Integer bufferSize = 4 * 1024;
+			Integer bufferSize = 2 * 1024;
 		    MultipartStream multipartStream = new MultipartStream(rawResponse.getBody(), boundary.getBytes(), bufferSize, null); 
 		    ByteArrayOutputStream chunkStream = new ByteArrayOutputStream();
 		    Boolean hasNext = multipartStream.skipPreamble(); 
 		    
 		    while(hasNext && eventFetching) { 
-
+		    	
 	            // Leer partición del stream
 		    	multipartStream.readBodyData(chunkStream); 
-		        
-		        // Mapear headers de la partición
-		        Map<String, String> headers = new HashMap<String, String>();
-		        String headersText = multipartStream.readHeaders(); 
-	            Matcher headerPropsMatcher = Pattern
-	            		.compile("(.+): (.+)", Pattern.MULTILINE)
-	            		.matcher(headersText);
-	             
-	            while(headerPropsMatcher.find()) {
-	            	headers.put(headerPropsMatcher.group(1), headerPropsMatcher.group(2));
-	            }
-	            
-	            /*
-	            // https://en.wikipedia.org/wiki/List_of_file_signatures
-	            // https://stackoverflow.com/questions/53500627/malformedstreamexception-stream-ended-unexpectedly
-	            // Evento con imagen
-	            if(headers.get("Content-Type").startsWith("image/")) {
-	            	
-	            	// Sección informativa de la parte del stream
-	            	String streamPart = chunkStream.toString();
-	            	String eventJson = streamPart.substring(streamPart.indexOf("{"), streamPart.length() - 1);
-	            	
-	            	// Sección binaria de la parte del stream
-	            	String imagePath = getSnapshotsPath() + "\\" + Long.toString(System.currentTimeMillis()) + 
-						(headers.get("Content-Type").equals("image/png") ? ".png" : ".jpg");
-				
-					try(OutputStream outputStream = new FileOutputStream(imagePath)) {
-						chunkStream.writeTo(outputStream);
-					}
-	        		
-	        		//readEventJson.accept(eventJson, imagePath);
-	            }
-	            // Evento normal
-	            else if(headers.get("Content-Type").startsWith("application/json")) {
-	            */
-	            
-            	String eventJson = chunkStream.toString();
-            	readEventJson.accept(eventJson);
+		    	String chunk = chunkStream.toString();
+
+		    	// El stream esta mal formado
+		    	// No sigue el patrón correcto para el delimitador en ocaciones
+		    	// Lo siguiente intenta solucionarlo
+		    	String regex = "Content-Type:.*?\\nContent-Length: \\d+";
+		    	Pattern pattern = Pattern.compile(regex, Pattern.MULTILINE | Pattern.DOTALL);
+		    	String[] parts = pattern.split(chunk);
+		    	
+		    	for(String part : parts) {
+		    		try {
+		    			String json = part.substring(part.indexOf("{"), part.lastIndexOf("}") + 1).trim();
+		    			
+		    			if(!json.equals("")) {
+		    				readEventJson.accept(json);
+		    			}
+		    		}
+		    		catch(IndexOutOfBoundsException ioobe) {}
+		    	}
 	            
 		        hasNext = multipartStream.readBoundary(); 
+		        
+//		        Map<String, String> headers = new HashMap<String, String>();
+//		    	String headersText = multipartStream.readHeaders(); 
+//		    	Matcher headerPropsMatcher = Pattern
+//		    			.compile("(.+): (.+)", Pattern.MULTILINE)
+//		    			.matcher(headersText);
+//		    	
+//		    	while(headerPropsMatcher.find()) {
+//		    		headers.put(headerPropsMatcher.group(1), headerPropsMatcher.group(2));
+//		    	}
+//		    	
+//	            if(headers.get("Content-Type").startsWith("image/")) {
+//	            	
+//	            	String imagePath = getSnapshotsPath() + "\\" + Long.toString(System.currentTimeMillis()) + 
+//						(headers.get("Content-Type").equals("image/png") ? ".png" : ".jpg");
+//				
+//					try(OutputStream outputStream = new FileOutputStream(imagePath)) {
+//						chunkStream.writeTo(outputStream);
+//					}
+//	            }
 		    } 
 			
 			IOUtils.closeQuietly(chunkStream);
@@ -205,9 +170,20 @@ public class ISAPIDevice extends HikSenseDevice {
 					Pattern pattern = Pattern.compile(regex);
 					Matcher matcher = pattern.matcher(fullMessage);
 					
-					
 					if(matcher.find() && matcher.groupCount() == 3) {
-						System.err.println("REINICIANDO CONEXIÓN... [" + matcher.group(1) + "/" + matcher.group(2) + "/" + matcher.group(3) + "/" + "]");
+						
+						List<String> codes = Arrays.asList("deployExceedMax", "deviceBusy");
+						
+						if(!codes.contains(matcher.group(2))) {
+							System.err.println("REINICIANDO CONEXIÓN... [" + matcher.group(1) + "/" + matcher.group(2) + "/" + matcher.group(3) + "/" + "]");
+						}
+						
+						if(matcher.group(2).equals("deployExceedMax")) {
+							try {
+								Thread.sleep(1000);
+							} 
+							catch (InterruptedException e1) { }
+						}
 					}
 					else {
 						System.err.println("REINICIANDO CONEXIÓN... [" + e.getMessage() + "]");
@@ -224,7 +200,39 @@ public class ISAPIDevice extends HikSenseDevice {
 		this.eventFetching = false;
 	}
 	
-	/*
+	public AccessEvent fetchOneEvent(String date, Integer majorEventType, Integer minorEventType, Boolean hasPicture) {
+		String service = getIsapiUrl() + "/AccessControl/AcsEvent?format=json";
+		
+		Map<String, Object> accessEventCondition = new HashMap<String, Object>();
+		accessEventCondition.put("searchID", "AccessControlSystem--fetchOneEvent()");
+		accessEventCondition.put("maxResults", 1);
+		accessEventCondition.put("searchResultPosition", 0);
+		accessEventCondition.put("startTime", date);
+		accessEventCondition.put("endTime", date);
+		accessEventCondition.put("major", majorEventType);
+		accessEventCondition.put("minor", minorEventType);
+		accessEventCondition.put("picEnable", hasPicture);
+		
+		Map<String, Object> payload = new HashMap<String, Object>();
+		payload.put("AcsEventCond", accessEventCondition);
+		
+		ResponseEntity<String> response = isapi.postForEntity(service, payload, String.class);
+		
+		if(response.getStatusCode() == HttpStatus.OK) {
+			try {
+				JsonParser json = mapper.createParser(response.getBody());
+				String realJson = json.readValueAsTree().get("AcsEvent").asToken().asString();
+				return mapper.createParser(realJson).readValueAs(AccessEvent.class);
+			} 
+			catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+		
+		return null;
+	}
+	
+	/**
 	 * Otras opciones:
 	 * 		URL: http://192.168.100.48/ISAPI/Streaming/Channels/101/picture /httpPreview /preview 
 	 */
@@ -307,7 +315,7 @@ public class ISAPIDevice extends HikSenseDevice {
 		return "rtsp://" + user + ":" + getPassword() + "@" + hostName + ":" + rtspPort + "/ISAPI";
 	}
 	
-	private String getSnapshotsPath() {
+	protected String getSnapshotsPath() {
 		return snapshotsPath == null ? System.getProperty("user.home") : snapshotsPath;
 	}
 	
@@ -317,9 +325,22 @@ public class ISAPIDevice extends HikSenseDevice {
 	    HttpClient httpClient = HttpClients
 	            .custom()
 	            .setDefaultCredentialsProvider(credentialsProvider)
+	            .setConnectionTimeToLive(1000, TimeUnit.MILLISECONDS)
+	            .setRetryHandler(new HttpRequestRetryHandler() {
+					
+					@Override
+					public boolean retryRequest(IOException e, int executionCount, HttpContext context) {
+						if(e instanceof NoHttpResponseException) {
+		                    return true;
+		                }
+						return false;
+					}
+				})
 	            .build();
 	    RestTemplate restTemplate = new RestTemplateBuilder()
 	    		.requestFactory(() -> new HttpComponentsClientHttpRequestFactory(httpClient))
+	    		.setConnectTimeout(Duration.ofSeconds(20))
+	    		.setReadTimeout(Duration.ofMinutes(1))
 	    		.build();
 	    
 	    return restTemplate;

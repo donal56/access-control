@@ -4,7 +4,7 @@ import java.util.Map;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
 
-public class DeviceEvent {
+public class GenericEvent {
 
 	private String ipAddress;
 	private Integer portNo;
@@ -17,7 +17,7 @@ public class DeviceEvent {
 	private String eventDescription;
 	@JsonAlias("AccessControllerEvent")
 	private AccessControllerEvent accessControllerEvent;
-	private Map<String, String> customData;
+	private Map<String, Object> customData;
 
 	public String getIpAddress() {
 		return ipAddress;
@@ -99,11 +99,11 @@ public class DeviceEvent {
 		this.accessControllerEvent = accessControllerEvent;
 	}
 
-	public Map<String, String> getCustomData() {
+	public Map<String, Object> getCustomData() {
 		return customData;
 	}
 
-	public void setCustomData(Map<String, String> customData) {
+	public void setCustomData(Map<String, Object> customData) {
 		this.customData = customData;
 	}
 	

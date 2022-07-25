@@ -1,7 +1,6 @@
 package com.insigniait.accessControl.config;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -10,17 +9,15 @@ import java.util.function.Consumer;
 
 import javax.annotation.PostConstruct;
 
-import org.apache.commons.codec.binary.Base64;
-import org.apache.commons.io.FileUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 
+import com.insigniait.accessControl.dto.AccessControlDevice;
 import com.insigniait.accessControl.dto.AccessControllerEvent;
-import com.insigniait.accessControl.dto.DeviceEvent;
-import com.insigniait.accessControl.dto.FaceRecognitionTerminal;
+import com.insigniait.accessControl.dto.GenericEvent;
 
 @Component
 public class ThreadManager {
@@ -36,7 +33,7 @@ public class ThreadManager {
     	
     	String snapshotsPath = System.getProperty("user.dir") + "\\src\\main\\resources\\static\\img\\visitors";
     	
-    	FaceRecognitionTerminal terminal = new FaceRecognitionTerminal("192.168.100.48", "admin", "Insigniait01!");
+    	AccessControlDevice terminal = new AccessControlDevice("192.168.1.194", "admin", "Insigniait01!");
     	terminal.setSnapshotsPath(snapshotsPath);
     	
     	Runnable faceRecognitionEventsThread = new Thread(new Runnable() {
@@ -44,10 +41,12 @@ public class ThreadManager {
 			@Override
 			public void run() {
 				
-				terminal.fetchEvents(new Consumer<DeviceEvent>() {
+				terminal.captureFaceData();
+				
+				/*terminal.fetchEvents(new Consumer<GenericEvent>() {
 					
 					@Override
-					public void accept(DeviceEvent event) {
+					public void accept(GenericEvent event) {
 						AccessControllerEvent accessControllerEvent = event.getAccessControllerEvent();
 						List<Integer> availableEvents = Arrays.asList(75, 76);
 						
@@ -61,17 +60,13 @@ public class ThreadManager {
 							
 							if(registrar) {
 								String newUser = terminal.registerUnknowVistor();
-								Map<String, String> customData = new HashMap<String, String>();
+								Map<String, Object> customData = new HashMap<String, Object>();
 								customData.put("newUser", newUser);
+
+								//terminal.captureFaceData();
+								File snapshot = terminal.retrieveSnapshot(101, newUser);
 								
-								File snapshot = terminal.retrieveSnapshot(null, newUser);
-								try {
-									byte[] snapshotBytes = Base64.encodeBase64(FileUtils.readFileToByteArray(snapshot));
-									customData.put("snapshot", new String(snapshotBytes));
-								} 
-								catch (IOException e) {
-									e.printStackTrace();
-								}
+								terminal.agregarRostro("1", newUser, "Invitado", snapshot);
 								
 								event.setCustomData(customData);
 							}
@@ -79,7 +74,7 @@ public class ThreadManager {
 							simpMessagingTemplate.convertAndSend("/topic/face-recognition", event);
 				        }
 					}
-				});
+				});*/
 			}
     	});
     	
